@@ -91,9 +91,11 @@ if (!hasConfig) {
       window.leuanvetoBridge.setLocal();
       drawAccount();
       if (!currentUser) {
+        $("save").disabled=false;
         note("Tallennus vain tähän selaimeen – kirjaudu sisään synkronointia varten");
         return;
       }
+      $("save").disabled=true;
       panel.hidden=true;failure("");
       note("Ladataan harjoituksia pilvestä…");
       const uid=currentUser.uid;
@@ -105,16 +107,17 @@ if (!hasConfig) {
           const synced=snapshot.docs.map(doc=>doc.data()).filter(validateEntry);
           ready=true;
           window.leuanvetoBridge.setCloud(synced);
+          $("save").disabled=false;
           note(!navigator.onLine || snapshot.metadata.fromCache ? "Ei verkkoyhteyttä – pilvitietojen välimuisti" :
             snapshot.metadata.hasPendingWrites ? "Tallennetaan pilveen…" : "Synkronoitu · tietosi näkyvät kaikilla kirjautuneilla laitteillasi");
         },
-        err => { ready=false;note("Pilven lataus epäonnistui: "+err.message) }
+        err => { ready=false;$("save").disabled=true;note("Pilven lataus epäonnistui: "+err.message) }
       );
     }, err=>note("Kirjautumisen tarkistus epäonnistui: "+err.message));
     toggle.addEventListener("click",async()=>{
       if(user){
         if(!confirm("Kirjaudutaanko ulos? Pilveen tallennetut harjoitukset säilyvät tililläsi."))return;
-        await firebaseAuth.signOut(auth);
+        try{await firebaseAuth.signOut(auth)}catch(err){failure("Uloskirjautuminen epäonnistui: "+err.message)}
       }else{ panel.hidden=!panel.hidden;failure("") }
     });
     $("loginForm").addEventListener("submit",async e=>{
