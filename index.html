@@ -29,7 +29,7 @@ $("save").onclick=()=>{if(!$("date").value)return alert("Valitse päivämäärä
 $("today").onclick=e=>{let id=e.target.dataset.del;if(id&&confirm("Poistetaanko sarja?")){records=records.filter(r=>r.id!==id);saveData();render()}};
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{document.querySelectorAll("main section").forEach(s=>s.hidden=s.id!==b.dataset.tab);document.querySelectorAll("[data-tab]").forEach(t=>t.classList.toggle("active",t===b));render()});
 $("export").onclick=()=>{let a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(records,null,2)],{type:"application/json"}));a.download="leuanveto-varmuuskopio.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
-$("import").onchange=async e=>{try{let a=JSON.parse(await e.target.files[0].text());if(!Array.isArray(a)||!a.every(r=>typeof r.id==="string"&&/^\\d{4}-\\d{2}-\\d{2}$/.test(r.date)&&Number.isInteger(r.reps)&&r.reps>0&&typeof r.time==="string"))throw Error();if(confirm("Korvataanko nykyiset tiedot varmuuskopiolla?")){records=a;saveData();render()}}catch{alert("Varmuuskopion tiedosto ei kelpaa")}e.target.value=""};
+$("import").onchange=async e=>{try{let a=JSON.parse(await e.target.files[0].text());if(!Array.isArray(a)||!a.every(r=>typeof r.id==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&Number.isInteger(r.reps)&&r.reps>0&&typeof r.time==="string"))throw Error();if(confirm("Korvataanko nykyiset tiedot varmuuskopiolla?")){records=a;saveData();render()}}catch{alert("Varmuuskopion tiedosto ei kelpaa")}e.target.value=""};
 if("serviceWorker"in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("./sw.js").catch(()=>{});
 render();
 </script></body></html>
