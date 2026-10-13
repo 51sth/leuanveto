@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="fi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#103f35">
+<title>Juoksu – Oma liikunta</title><link rel="stylesheet" href="../style.css">
+<style>
+#cooperFields[hidden],#stairsFields[hidden],#runFields[hidden]{display:none}
+#runStats{margin:12px 0}.entry{border-top:1px solid #e5eee8;padding:13px 0}
+.entry-top{display:flex;justify-content:space-between;gap:12px;align-items:center}.entry-main{font-weight:750}
+.entry-sub{color:#5f7769;font-size:13px;margin-top:4px}
+.summary{font-weight:700;color:#0d7650;margin:12px 0}
+.chart{display:flex;height:180px;align-items:end;gap:7px;border-bottom:1px solid #c9dccf;padding-top:12px}
+.bar{background:#0b8b62;min-width:12px;flex:1;max-width:60px;border-radius:5px 5px 0 0;position:relative}
+.bar em{position:absolute;left:0;right:0;bottom:-20px;text-align:center;color:#617767;font-style:normal;font-size:11px}
+.chart-wrap{padding-bottom:29px;overflow-x:auto}
+#message{padding:9px 12px;margin:0 0 13px;background:#e9f3ed;border-radius:12px;font-size:13px}
+#notes{min-height:62px}
+@media(max-width:560px){.entry-top{gap:6px}.entry-main{font-size:14px}.chart{height:130px}}
+</style></head><body>
+<header><div style="max-width:720px;margin:auto"><a style="display:inline-block;color:#d4ebdd;font-weight:700;margin-bottom:12px" href="../">← Etusivulle</a><h1>🏃 Juoksu</h1><small>Rappusjuoksu, Cooper ja juoksu</small></div></header>
+<main>
+<div id="message" role="status">Yhdistetään pilvitietokantaan…</div>
+<section class="card">
+<h2>Kirjaa harjoitus</h2>
+<form id="runForm">
+<div class="two">
+<label>Päivämäärä<input id="date" type="date" required></label>
+<label>Harjoitusmuoto<select id="type"><option value="rappusjuoksu">Rappusjuoksu</option><option value="cooper">Cooper</option><option value="juoksu">Juoksu</option></select></label>
+</div>
+<div id="stairsFields">
+<div class="two">
+<label>Nousukerrat<input id="climbs" type="number" min="1" max="10000" step="1" value="5" inputmode="numeric"></label>
+<label>Kesto, minuutit<input id="stairsMin" type="number" min="0" max="600" step="1" value="20" inputmode="numeric"></label>
+</div>
+<label>Kesto, sekunnit<input id="stairsSec" type="number" min="0" max="59" step="1" value="0" inputmode="numeric"></label>
+<p class="helper">Merkitse kokonaiset nousukerrat. Alastuloa ei lasketa nousuksi.</p>
+</div>
+<div id="cooperFields" hidden>
+<div class="info">Cooperin testin kesto on aina <b>12 minuuttia</b>. Kirjaa kuljettu matka metreinä.</div>
+<label>Matka, metriä<input id="cooperM" type="number" min="1" max="10000" step="1" value="2000" inputmode="numeric"></label>
+</div>
+<div id="runFields" hidden>
+<div class="two"><label>Matka, km<input id="runKm" type="number" min="0.01" max="300" step="0.01" value="3" inputmode="decimal"></label>
+<label>Kesto, minuutit<input id="runMin" type="number" min="0" max="600" step="1" value="20" inputmode="numeric"></label></div>
+<label>Kesto, sekunnit<input id="runSec" type="number" min="0" max="59" step="1" value="0" inputmode="numeric"></label>
+</div>
+<label>Muistiinpanot (valinnainen)<textarea id="notes" maxlength="400" placeholder="Esim. miltä harjoitus tuntui"></textarea></label>
+<p id="preview" class="summary" aria-live="polite"></p>
+<button type="submit" class="primary full" id="save" disabled>✓ Tallenna harjoitus</button>
+</form>
+</section>
+<section class="card">
+<h2>Kehityksen seuranta</h2>
+<div class="stat-grid" id="runStats">
+<div class="stat">Harjoituksia<b>0</b></div><div class="stat">Kilometrejä<b>0</b></div><div class="stat">Rappusnousuja<b>0</b></div><div class="stat">Paras Cooper<b>–</b></div>
+</div>
+<hr class="divider">
+<label>Näytä harjoitusmuodon kehitys<select id="chartType"><option value="cooper">Cooperin tulos</option><option value="rappusjuoksu">Rappusjuoksun nousut</option><option value="juoksu">Juoksun matka</option></select></label>
+<div id="chartUnit" class="helper"></div><div class="chart-wrap"><div id="chart" class="chart"></div></div>
+</section>
+<section class="card">
+<div class="row"><h2 style="margin:0">Harjoitushistoria</h2><button type="button" class="outline" id="export">Varmuuskopio ↓</button></div>
+<label style="margin-top:17px">Rajaa harjoituksia<select id="historyType"><option value="kaikki">Kaikki</option><option value="rappusjuoksu">Rappusjuoksu</option><option value="cooper">Cooper</option><option value="juoksu">Juoksu</option></select></label>
+<div id="history"><p class="muted">Ei vielä harjoituksia.</p></div>
+</section>
+</main>
+<script type="module">
+import {firebaseConfig} from "../firebase-config.js";
+import {initializeApp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import {getAuth,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import {getFirestore,collection,onSnapshot,setDoc,deleteDoc,doc} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+const app=initializeApp(firebaseConfig);
+const auth=getAuth(app),db=getFirestore(app),$=id=>document.getElementById(id);
+let uid=null,ready=false,stop=null,entries=[];
+const labels={rappusjuoksu:"Rappusjuoksu",cooper:"Cooper",juoksu:"Juoksu"};
+const nf=(n,digits=0)=>new Intl.NumberFormat("fi-FI",{maximumFractionDigits:digits}).format(n);
+const localDay=(d)=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
+const dateLabel=s=>s.split("-").reverse().join(".");
+const clock=iso=>new Intl.DateTimeFormat("fi-FI",{timeZone:"Europe/Helsinki",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(iso));
+const minutes=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+const pace=(meters,seconds)=>meters>0&&seconds>0?minutes(Math.round(seconds/(meters/1000)))+" min/km":"–";
+const safe=text=>String(text).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const status=text=>{$("message").textContent=text};
+const valid=e=>e && typeof e.id==="string" && e.id.length>0 && e.id.length<=128 && /^[a-f0-9-]+$/i.test(e.id) && typeof e.date==="string" && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.type in labels && Number.isInteger(e.durationSeconds) && e.durationSeconds>0 && e.durationSeconds<=36060 && Number.isInteger(e.distanceMeters) && e.distanceMeters>=0 && e.distanceMeters<=300000 && Number.isInteger(e.climbs) && e.climbs>=0 && e.climbs<=10000 && typeof e.time==="string" && !Number.isNaN(Date.parse(e.time)) && typeof e.notes==="string" && e.notes.length<=400;
+function typedFields(){
+ const kind=$("type").value;
+ for(const name of ["rappusjuoksu","cooper","juoksu"]){
+  const el=$({rappusjuoksu:"stairsFields",cooper:"cooperFields",juoksu:"runFields"}[name]);
+  el.hidden=name!==kind;
+ }
+ const fieldGroups={rappusjuoksu:["climbs","stairsMin","stairsSec"],cooper:["cooperM"],juoksu:["runKm","runMin","runSec"]};
+ for(const [name,fields] of Object.entries(fieldGroups))for(const id of fields)$(id).required=name===kind;
+ preview();
+}
+function getInput(){
+ const num=id=>Number($(id).value);
+ let durationSeconds=0,distanceMeters=0,climbs=0;
+ const type=$("type").value;
+ if(type==="rappusjuoksu"){climbs=num("climbs");durationSeconds=num("stairsMin")*60+num("stairsSec")}
+ if(type==="cooper"){durationSeconds=720;distanceMeters=Math.round(num("cooperM"))}
+ if(type==="juoksu"){durationSeconds=num("runMin")*60+num("runSec");distanceMeters=Math.round(num("runKm")*1000)}
+ if(!Number.isInteger(durationSeconds)||durationSeconds<1||durationSeconds>36060)throw new Error("Anna kelvollinen harjoitusaika.");
+ if(!Number.isInteger(distanceMeters)||distanceMeters<0||distanceMeters>300000)throw new Error("Anna kelvollinen matka.");
+ if(!Number.isInteger(climbs)||climbs<0||climbs>10000)throw new Error("Anna kelvollinen nousukertojen määrä.");
+ return {type,date:$("date").value,climbs,durationSeconds,distanceMeters,notes:$("notes").value.trim()};
+}
+function preview(){
+ try{
+  const r=getInput();
+  $("preview").textContent=r.type==="rappusjuoksu" ? r.climbs+" nousua · "+minutes(r.durationSeconds) :
+    r.type==="cooper" ? nf(r.distanceMeters)+" metriä / 12 min" :
+    nf(r.distanceMeters/1000,2)+" km · "+minutes(r.durationSeconds)+" · "+pace(r.distanceMeters,r.durationSeconds);
+ }catch{$("preview").textContent="Täytä harjoituksen tiedot."}
+}
+function render(){
+ const sorted=entries.slice().sort((a,b)=>b.time.localeCompare(a.time));
+ const km=entries.reduce((t,r)=>t+r.distanceMeters,0)/1000;
+ const climbs=entries.reduce((t,r)=>t+r.climbs,0);
+ const best=Math.max(0,...entries.filter(r=>r.type==="cooper").map(r=>r.distanceMeters));
+ const stats=[["Harjoituksia",nf(entries.length)],["Juoksukilometrejä",nf(km,2)],["Rappusnousuja",nf(climbs)],["Paras Cooper",best?nf(best)+" m":"–"]];
+ $("runStats").innerHTML=stats.map(([label,value])=>'<div class="stat">'+safe(label)+'<b>'+safe(value)+'</b></div>').join("");
+ const chartType=$("chartType").value;
+ const exercise=entries.filter(r=>r.type===chartType).sort((a,b)=>a.time.localeCompare(b.time)).slice(-10);
+ const metric=r=>chartType==="rappusjuoksu"?r.climbs:r.distanceMeters;
+ const unit=chartType==="rappusjuoksu"?"nousua":chartType==="cooper"?"metriä":"metriä (matka)";
+ $("chartUnit").textContent="Viimeiset "+exercise.length+" harjoitusta · "+unit;
+ const max=Math.max(1,...exercise.map(metric));
+ $("chart").innerHTML=exercise.length?exercise.map(r=>'<div class="bar" title="'+safe(dateLabel(r.date)+": "+nf(metric(r))+" "+unit)+'" style="height:'+Math.max(3,Math.round(metric(r)/max*100))+'%"><em>'+safe(r.date.slice(5).replace("-","."))+'</em></div>').join(""):'<p class="muted">Ei vielä tuloksia tässä lajissa.</p>';
+ const filter=$("historyType").value;
+ const shown=sorted.filter(r=>filter==="kaikki"||r.type===filter);
+ $("history").innerHTML=shown.length ? shown.map(r=>{
+  const amount=r.type==="rappusjuoksu"?nf(r.climbs)+" nousua":nf(r.distanceMeters/1000,2)+" km";
+  const extra=(r.type!=="rappusjuoksu"?" · "+pace(r.distanceMeters,r.durationSeconds):"");
+  return '<div class="entry"><div class="entry-top"><div><div class="entry-main">'+safe(dateLabel(r.date)+" · "+labels[r.type])+'</div><div class="entry-sub">'+safe(amount+" · "+minutes(r.durationSeconds)+extra+" · klo "+clock(r.time))+'</div></div><button type="button" class="outline" data-delete="'+safe(r.id)+'">Poista</button></div>'+ (r.notes?'<p class="helper">'+safe(r.notes)+'</p>':"")+'</div>'
+ }).join(""):'<p class="muted">Ei vielä harjoituksia tässä näkymässä.</p>';
+}
+$("date").value=localDay(new Date());
+$("type").onchange=typedFields;
+for(const id of ["climbs","stairsMin","stairsSec","cooperM","runKm","runMin","runSec"])$(id).addEventListener("input",preview);
+$("chartType").onchange=render;$("historyType").onchange=render;
+typedFields();render();
+onAuthStateChanged(auth,user=>{
+ if(stop){stop();stop=null}
+ uid=user?.uid||null;ready=false;$("save").disabled=true;
+ if(!uid){location.replace("../");return}
+ status("Ladataan juoksuhistoriaa pilvestä…");
+ stop=onSnapshot(collection(db,"users",uid,"runs"),{includeMetadataChanges:true},
+   snapshot=>{
+     if(!uid||auth.currentUser?.uid!==uid)return;
+     entries=snapshot.docs.map(d=>d.data()).filter(valid);
+     ready=navigator.onLine&&!snapshot.metadata.fromCache;
+     $("save").disabled=!ready;
+     status(ready?(snapshot.metadata.hasPendingWrites?"Tallennetaan pilveen…":"Synkronoitu · juoksuhistoria näkyy kaikilla laitteillasi"):"Odotetaan internetyhteyttä…");
+     render();
+   },
+   error=>{ready=false;$("save").disabled=true;status("Juoksutietoja ei voi avata: "+error.message+". Tarkista Firestore Rules -asetukset.")});
+},error=>status("Kirjautumisen tarkistus epäonnistui: "+error.message));
+$("runForm").onsubmit=async e=>{
+ e.preventDefault();if(!ready||!uid)return;
+ if(!$("runForm").reportValidity())return;
+ let entry;
+ try{entry={...getInput(),id:crypto.randomUUID(),time:new Date().toISOString()};if(!valid(entry))throw new Error("Harjoitus ei kelpaa.");}
+ catch(err){alert(err.message);return}
+ $("save").disabled=true;
+ try{await setDoc(doc(db,"users",uid,"runs",entry.id),entry);$("notes").value="";status("Harjoitus tallennettu pilveen")}
+ catch(err){alert("Tallennus epäonnistui: "+err.message)}
+ finally{$("save").disabled=!ready}
+};
+$("history").onclick=async e=>{
+ const id=e.target.closest("[data-delete]")?.dataset.delete;
+ if(!id||!uid||!ready)return;
+ if(!confirm("Poistetaanko harjoitus myös pilvestä ja muilta laitteilta?"))return;
+ try{await deleteDoc(doc(db,"users",uid,"runs",id))}
+ catch(err){alert("Poisto epäonnistui: "+err.message)}
+};
+$("export").onclick=()=>{
+ const url=URL.createObjectURL(new Blob([JSON.stringify(entries,null,2)],{type:"application/json"}));
+ const a=document.createElement("a");a.href=url;a.download="juoksu-varmuuskopio.json";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+</script></body></html>
