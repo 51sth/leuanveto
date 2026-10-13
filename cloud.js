@@ -4,6 +4,71 @@ const $ = id => document.getElementById(id);
 const badge = $("cloudBadge"), status = $("cloudStatus"), toggle = $("authToggle");
 const panel = $("authPanel"), errorBox = $("authError"), importButton = $("cloudImport");
 let user = null, ready = false, stopListening = null, auth, db, firestore;
+let autoImportAttempted=false;
+const USERNAME_DOMAIN="users.leuanveto.example.com";
+const OWNER_KEY="leuanveto-local-import-owner-v1";
+const importedKey=uid=>"leuanveto-local-imported-v1:"+uid;
+function getLoginEmail(value) {
+  const name=value.trim().toLowerCase();
+  if(name.includes("@")) {
+    if(!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(name)) throw new Error("Sähköpostiosoite on virheellinen");
+    return name;
+  }
+  if(!/^[a-z0-9][a-z0-9_-]{2,23}$/.test(name)) throw new Error("Käyttäjänimessä pitää olla 3–24 merkkiä: a–z, 0–9, _ tai -.");
+  return name+"@"+USERNAME_DOMAIN;
+}
+function accountLabel(current) {
+  const suffix="@"+USERNAME_DOMAIN;
+  return current?.email?.endsWith(suffix) ? current.email.slice(0,-suffix.length) : "sähköpostitili";
+}
+function importedSet(uid) {
+  try {
+    const ids=JSON.parse(localStorage.getItem(importedKey(uid))||"[]");
+    return new Set(Array.isArray(ids)?ids.filter(x=>typeof x==="string"):[]);
+  } catch { return new Set() }
+}
+function localPending(uid) {
+  const imported=importedSet(uid);
+  return window.leuanvetoBridge.getLocal().filter(r=>validateEntry(r)&&!imported.has(r.id));
+}
+function refreshImportButton() {
+  const pending=user?localPending(user.uid):[];
+  importButton.hidden= !user || pending.length===0;
+  importButton.disabled=!ready;
+  if(user && pending.length>0) {
+    importButton.textContent="↑ Siirrä "+pending.length+" paikallista sarjaa pilveen";
+  }
+}
+function markImported(uid, entries) {
+  const ids=importedSet(uid);
+  for(const r of entries) ids.add(r.id);
+  localStorage.setItem(importedKey(uid),JSON.stringify([...ids]));
+  if(!localStorage.getItem(OWNER_KEY)) localStorage.setItem(OWNER_KEY,uid);
+  refreshImportButton();
+}
+async function autoImportLocal(uid) {
+  const pending=localPending(uid);
+  if(!pending.length) { refreshImportButton();return }
+  const owner=localStorage.getItem(OWNER_KEY);
+  if(owner && owner!==uid) {
+    note("Paikallisia sarjoja ei siirretty automaattisesti: ne on aiemmin yhdistetty toiseen tiliin.");
+    refreshImportButton();
+    return;
+  }
+  $("save").disabled=true;
+  note("Siirretään "+pending.length+" aiempaa sarjaa automaattisesti pilveen…");
+  try {
+    await window.leuanvetoCloud.import(pending);
+    markImported(uid,pending);
+    note("Vanhat harjoitukset siirretty pilveen · synkronoitu");
+  } catch(err) {
+    note("Automaattinen siirto epäonnistui: "+err.message+" – voit yrittää uudelleen siirtopainikkeella.");
+    refreshImportButton();
+  } finally {
+    $("save").disabled=!ready;
+  }
+}
+
 const hasConfig = ["apiKey", "authDomain", "projectId", "appId"].every(k => typeof firebaseConfig[k] === "string" && firebaseConfig[k].trim());
 const note = message => { status.textContent = message };
 const failure = message => { errorBox.textContent = message };
@@ -37,7 +102,7 @@ function drawAccount() {
   badge.textContent = active ? "Pilvi" : "Tämä laite";
   badge.className = active ? "pill-cloud" : "pill-local";
   toggle.textContent=active ? "Kirjaudu ulos" : "Kirjaudu";
-  importButton.hidden = !active || window.leuanvetoBridge.getLocal().length === 0;
+  refreshImportButton();
 }
 window.leuanvetoCloud = {
   async save(record) {
@@ -87,7 +152,7 @@ if (!hasConfig) {
     db=firebaseFirestore.getFirestore(app);
     firebaseAuth.onAuthStateChanged(auth, currentUser => {
       if(stopListening){stopListening();stopListening=null}
-      user=currentUser;ready=false;
+      user=currentUser;ready=false;autoImportAttempted=false;
       window.leuanvetoBridge.setLocal();
       drawAccount();
       if (!currentUser) {
@@ -105,11 +170,21 @@ if (!hasConfig) {
         snapshot => {
           if (!user || user.uid!==uid) return;
           const synced=snapshot.docs.map(doc=>doc.data()).filter(validateEntry);
-          ready=true;
+          ready = navigator.onLine && !snapshot.metadata.fromCache;
           window.leuanvetoBridge.setCloud(synced);
-          $("save").disabled=false;
-          note(!navigator.onLine || snapshot.metadata.fromCache ? "Ei verkkoyhteyttä – pilvitietojen välimuisti" :
-            snapshot.metadata.hasPendingWrites ? "Tallennetaan pilveen…" : "Synkronoitu · tietosi näkyvät kaikilla kirjautuneilla laitteillasi");
+          $("save").disabled=!ready;
+          refreshImportButton();
+          if(!ready) {
+            note("Pilvitiedot välimuistista – odotetaan verkkoyhteyttä");
+          } else if(!autoImportAttempted) {
+            autoImportAttempted=true;
+            void autoImportLocal(uid);
+          } else if(!importButton.hidden && localStorage.getItem(OWNER_KEY) && localStorage.getItem(OWNER_KEY)!==uid) {
+            note("Pilvi synkronoitu · toisen tilin paikalliset sarjat eivät siirry automaattisesti");
+          } else {
+            note(snapshot.metadata.hasPendingWrites ? "Tallennetaan pilveen…" :
+              "Synkronoitu · "+accountLabel(currentUser)+" · tiedot näkyvät kirjautuneilla laitteilla");
+          }
         },
         err => { ready=false;$("save").disabled=true;note("Pilven lataus epäonnistui: "+err.message) }
       );
@@ -123,7 +198,7 @@ if (!hasConfig) {
     $("loginForm").addEventListener("submit",async e=>{
       e.preventDefault();failure("");setBusy(true);
       try{
-        await firebaseAuth.signInWithEmailAndPassword(auth,$("loginEmail").value.trim(),$("loginPassword").value);
+        await firebaseAuth.signInWithEmailAndPassword(auth,getLoginEmail($("loginEmail").value),$("loginPassword").value);
         $("loginPassword").value="";
       }catch(err){failure("Kirjautuminen epäonnistui. Tarkista sähköposti ja salasana. ("+err.code+")")}
       finally{setBusy(false)}
@@ -132,7 +207,7 @@ if (!hasConfig) {
       if(!$("loginForm").reportValidity())return;
       failure("");setBusy(true);
       try{
-        await firebaseAuth.createUserWithEmailAndPassword(auth,$("loginEmail").value.trim(),$("loginPassword").value);
+        await firebaseAuth.createUserWithEmailAndPassword(auth,getLoginEmail($("loginEmail").value),$("loginPassword").value);
         $("loginPassword").value="";
       }catch(err){failure("Tunnuksen luonti epäonnistui: "+err.code)}
       finally{setBusy(false)}
@@ -141,16 +216,30 @@ if (!hasConfig) {
       if(!$("loginEmail").checkValidity())return $("loginEmail").reportValidity();
       failure("");setBusy(true);
       try{
-        await firebaseAuth.sendPasswordResetEmail(auth,$("loginEmail").value.trim());
+        const email=getLoginEmail($("loginEmail").value);
+        if(email.endsWith("@"+USERNAME_DOMAIN)) {
+          failure("Käyttäjänimitilillä ei ole sähköpostipalautusta. Jos salasana katoaa, emme voi palauttaa sitä automaattisesti.");
+          return;
+        }
+        await firebaseAuth.sendPasswordResetEmail(auth,email);
         failure("Jos osoitteelle on tili, salasanan palautusviesti lähetetään siihen.");
-      }catch(err){failure("Palautuspyyntö epäonnistui: "+err.code)}
+      }catch(err){failure("Palautuspyyntö epäonnistui: "+err.message)}
       finally{setBusy(false)}
     });
     importButton.addEventListener("click",async()=>{
-      const entries=window.leuanvetoBridge.getLocal();
+      if(!user||!ready)return;
+      const uid=user.uid,entries=localPending(uid);
       if(!entries.length)return;
-      if(!confirm("Siirretäänkö tämän selaimen "+entries.length+" sarjaa pilveen? Pilvessä jo olevia eri sarjoja ei poisteta, eikä paikallista kopiota hävitetä."))return;
-      try{await window.leuanvetoCloud.import(entries);alert("Paikalliset harjoitukset siirretty pilveen.")}catch(err){alert("Siirto epäonnistui: "+err.message)}
+      const priorOwner=localStorage.getItem(OWNER_KEY);
+      const warning=priorOwner && priorOwner!==uid
+        ? "HUOMIO: Tämä selaimen harjoitushistoria on aiemmin liitetty toiseen käyttäjätiliin. Haluatko varmasti kopioida "+entries.length+" sarjaa nyt kirjautuneelle tilille?"
+        : "Siirretäänkö "+entries.length+" paikallista sarjaa pilveen? Jo tallennetut eri sarjat säilyvät.";
+      if(!confirm(warning))return;
+      try {
+        await window.leuanvetoCloud.import(entries);
+        markImported(uid,entries);
+        alert("Paikalliset harjoitukset siirretty pilveen.");
+      }catch(err){alert("Siirto epäonnistui: "+err.message)}
     });
   } catch(err) {
     toggle.hidden=true;
