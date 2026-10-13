@@ -5,9 +5,10 @@ Tämä on **kehityshaara**. Nykyinen `main`-versio jatkaa normaalisti toimintaa,
 ## Mikä muuttuu?
 
 - Harjoitustietojen tallennus henkilökohtaiselle Firebase-tilille.
-- Sama sähköposti ja salasana toimii sekä tietokoneella että Android-selaimessa, **ilman sähköpostin vahvistusviestiä**.
+- Kirjaudu sähköpostilla ja salasanalla tai luo uusi tili käyttäjänimellä ja salasanalla, **ilman sähköpostin vahvistusviestiä**.
+- Käyttäjänimitili muunnetaan sovelluksen sisällä varatulla verkkotunnuksella muodostetuksi Firebase Authenticationin sähköpostitunnisteeksi. Tällaisen tilin salasanaa **ei voi palauttaa sähköpostilla**. Suosittelemme säilyttämään salasanan turvallisesti.
 - Firestoren reaaliaikainen päivitys: kirjautuneet laitteet näkevät saman tietokannan.
-- Vanha paikallinen harjoitushistoria säilyy ja sen voi siirtää pilveen erillisellä toiminnolla.
+- Vanha paikallinen harjoitushistoria säilyy ja siirtyy automaattisesti pilveen ensimmäisen onnistuneen kirjautumisen jälkeen, jos sitä ei ole jo siirretty. Sarjojen tunnisteet muistetaan, jotta pilvestä poistettuja sarjoja ei palauteta seuraavan kirjautumisen yhteydessä. Jos selaimen harjoitukset on aiemmin yhdistetty toiseen käyttäjätiliin, tarvitaan erillinen vahvistettu siirto.
 - Kirjautumatta sovellus käyttää edelleen selaimen vanhaa paikallista tallennusta.
 - Varmuuskopion palautus yhdistää sarjat pilveen eikä poista muulla laitteella tallennettuja sarjoja.
 
@@ -15,7 +16,7 @@ Tämä on **kehityshaara**. Nykyinen `main`-versio jatkaa normaalisti toimintaa,
 
 1. Avaa https://console.firebase.google.com/ ja luo oma Firebase-projekti.
 2. Lisää projektiin **Web app** (</>), kopioi sen julkinen `firebaseConfig`-olio. Näissä tulee olla vähintään `apiKey`, `authDomain`, `projectId`, `appId`. Älä kopioi *service account* -avaimia!
-3. Avaa **Authentication → Sign-in method** ja ota käyttöön **Email/Password**. Sähköpostin vahvistamista ei tarvitse ottaa käyttöön. Oikea sähköpostiosoite on silti suositeltava salasanan palautusta varten.
+3. Avaa **Authentication → Sign-in method** ja ota käyttöön **Email/Password**. Sähköpostin vahvistamista ei tarvitse ottaa käyttöön. Aiemmat aidolla sähköpostilla rekisteröidyt tilit toimivat edelleen. Uudella käyttäjänimellä luotu tunnus on **erillinen käyttäjätili**, eikä se periydy aiemmasta sähköpostitilistä.
 4. Avaa **Firestore Database → Create database**. Valitse halutessasi EU-alue ja aluksi **Production mode**.
 5. Avaa **Firestore Database → Rules**, liitä täsmälleen tiedoston [firestore.rules](firestore.rules) säännöt ja paina **Publish**. Tämä on välttämätöntä yksityisyydelle: vain kirjautunut käyttäjä saa lukea ja muokata omia sarjojaan. Älä jätä tietokantaa testitilan avoimille säännöille.
 6. Lisää tarvittaessa Firebase Authenticationin **Settings → Authorized domains** -kohtaan `51sth.github.io` (etenkin salasanan palautuksen osalta).
@@ -26,7 +27,7 @@ Firebase voi pyytää maksutilin tai rajoittaa maksuttomia palveluja projektin a
 
 ## Vanhojen treenien siirtäminen
 
-- Kirjaudu sovellukseen samassa selaimessa, jolla olet aikaisemmin kirjannut harjoitukset. Sovellus näyttää **Siirrä tämän selaimen harjoitukset pilveen** -painikkeen, jos paikallisia treenejä on.
+- Kirjaudu sovellukseen samassa selaimessa, jolla olet aikaisemmin kirjannut harjoitukset. Sovellus siirtää paikalliset sarjat automaattisesti, jos ne eivät ole aiemmin siirtyneet eikä niitä ole liitetty toiseen käyttäjätiliin. Jos siirto epäonnistuu tai selain on kuulunut toiselle tilille, käytä **Siirrä paikalliset harjoitukset pilveen** -painiketta.
 - Jos harjoitukset ovat vanhassa Netlify-osoitteessa, lataa sieltä JSON-varmuuskopio ja palauta se uudessa osoitteessa kirjautumisen jälkeen. Eri verkkotunnusten localStorage-tiedot eivät siirry automaattisesti.
 - Älä poista alkuperäisiä harjoituksia tai varmuuskopioita ennen kuin olet varmistanut pilvisynkronoinnin toimivan.
 - Jos kahdella eri laitteella on samoilla tunnisteilla eri sisältöä, viimeksi tuotu sarja korvaa saman tunnisteen aiemman. Normaalit uudella UUID:llä tallennetut sarjat eivät törmää toisiinsa.
