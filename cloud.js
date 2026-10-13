@@ -11,7 +11,7 @@ const importedKey=uid=>"leuanveto-local-imported-v1:"+uid;
 function getLoginEmail(value) {
   const name=value.trim().toLowerCase();
   if(name.includes("@")) {
-    if(!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(name)) throw new Error("Sähköpostiosoite on virheellinen");
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(name)) throw new Error("Sähköpostiosoite on virheellinen");
     return name;
   }
   if(!/^[a-z0-9][a-z0-9_-]{2,23}$/.test(name)) throw new Error("Käyttäjänimessä pitää olla 3–24 merkkiä: a–z, 0–9, _ tai -.");
