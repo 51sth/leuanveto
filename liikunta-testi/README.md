@@ -13,9 +13,13 @@ Tämä versio **ei korvaa vielä alkuperäistä Leuanveto-sovellusta**.
 
 Sama Firebase-käyttäjätili toimii kaikissa osissa. Kirjautuminen on etusivulla. Aiempi paikallinen Leuanveto-historia löytyy edelleen selaimen tallennustilasta ja vanhan Leuanveto-sovelluksen pilvisarjat säilyvät.
 
-## Firestore Rules – VAATII käyttäjän toimenpiteen ennen Juoksun tallennuksen testaamista
+## Firestore Rules – julkaise yleinen sääntö yhden kerran
 
-Avaa Firebase-projektissa Firestore Database → Rules. Korvaa nykyiset säännöt koko tiedoston `firestore.rules` sisällöllä ja paina **Publish**. Säännöt sallivat vain tunnistautuneen käyttäjän omien `sets`- ja `runs`-asiakirjojen lukemisen ja muokkaamisen. Älä korvaa alkuperäistä `sets`-sääntöä pelkällä `runs`-säännöllä: Leuanveto tarvitsee myös sen.
+Avaa Firebase-projektissa **Firestore Database → Rules**. Korvaa nykyiset säännöt koko tiedoston `firestore.rules` sisällöllä ja paina **Publish**. GitHub-repositorion tiedoston muutos **ei** yksinään julkaise sääntöjä Firebaseen.
+
+Yleinen sääntö `/users/{userId}/{document=**}` kattaa rekursiivisesti kaikki nykyiset ja myöhemmät saman käyttäjän dokumentit, esimerkiksi `users/{uid}/sets/{setId}`, `users/{uid}/runs/{runId}` ja myöhemmät `users/{uid}/pyoraily/{id}`. Näin tuleville lajeille ei tarvitse julkaista erillistä sääntöä, kunhan niiden tiedot tallennetaan tämän käyttäjäkohtaisen rakenteen alle.
+
+Jokaisen Firebase-käyttäjän tietojen lukeminen ja muokkaaminen on rajattu hänen omaan `uid`-tunnukseensa. **Tärkeä rajoitus:** Yleissääntö antaa saman tilin käyttäjälle pääsyn kaikkiin oman tilin sovellustietoihin; se ei erottele sovellusten omia tietosuoja- tai muokkausoikeuksia toisistaan. Jos lisätään esimerkiksi sovellus, jolla on erityisiä tietoturvavaatimuksia, suunnitellaan sen pääsy erikseen. Sovelluskoodin pitää yhä toteuttaa uusien lajien toiminnot ja tallennus oikein.
 
 ## Testaus ennen julkaisua
 
