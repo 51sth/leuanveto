@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="fi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#103f35"><title>Oma liikunta – Leuanveto & juoksu</title><link rel="stylesheet" href="./style.css">
+<style>.account-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.account-row p{margin:6px 0 0}.authform{margin-top:16px}.authform[hidden],#loggedIn[hidden],#signIn[hidden]{display:none}.account-title{font-size:17px;font-weight:750}.account-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.account-grid label{grid-column:span 1}.action-grid{display:flex;gap:10px;flex-wrap:wrap}.action-grid button{flex:1}.section-intro{font-size:14px;margin:0 0 17px}.remember{margin-top:0}.card small{font-weight:400}@media(max-width:560px){.account-grid{grid-template-columns:1fr}.action-grid{flex-direction:column}}</style>
+</head><body>
+<header><h1>🏃 Oma liikunta</h1><small>Harjoitukset, kehitys ja henkilökohtainen seuranta</small></header>
+<main>
+<div class="card">
+  <div class="account-row">
+    <div><div class="account-title">Henkilökohtainen käyttäjätili</div><p id="status" class="helper" role="status">Tarkistetaan kirjautumista…</p></div>
+    <span class="badge" id="statusTag">Yhdistetään</span>
+  </div>
+  <div id="loggedIn" hidden>
+    <hr class="divider">
+    <div class="row"><div><b id="userLabel"></b><p class="helper" style="margin:4px 0">Harjoitukset tallentuvat turvallisesti omalle tilillesi.</p></div><button class="secondary" id="logout" type="button">Kirjaudu ulos</button></div>
+  </div>
+  <form id="signIn" class="authform" hidden>
+    <div class="account-grid">
+      <label>Käyttäjänimi tai sähköpostiosoite<input id="loginEmail" type="text" placeholder="Esim. johannes" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="254"></label>
+      <label>Salasana<input id="password" type="password" autocomplete="current-password" minlength="6" required></label>
+    </div>
+    <div class="action-grid">
+      <button class="primary" type="submit" id="submitLogin">Kirjaudu sisään</button>
+      <button class="secondary" type="button" id="register">Luo uusi tunnus</button>
+    </div>
+    <p id="loginError" class="error" role="alert"></p>
+    <p class="helper remember">Käyttäjänimitili ei vaadi sähköpostia. Ilman oikeaa sähköpostiosoitetta salasanaa ei kuitenkaan voi palauttaa automaattisesti.</p>
+    <button class="outline" type="button" id="reset">Unohtuiko salasana?</button>
+  </form>
+</div>
+<h2>Valitse harjoitus</h2>
+<p class="muted section-intro">Kaksi harjoitusmuotoa nyt – myöhemmin tähän voi lisätä uusia.</p>
+<div class="activity-grid">
+  <button type="button" id="openPullups" class="activity-card" disabled>
+    <span class="activity-icon" aria-hidden="true">💪</span><span class="activity-name">Leuanveto</span>
+    <span class="helper">Kirjaa sarjat, toistot, ote ja lisäpainot. Tarkastele ennätyksiä ja harjoitushistoriaa.</span>
+    <span class="badge">Avaa harjoitus →</span>
+  </button>
+  <button type="button" id="openRunning" class="activity-card" disabled>
+    <span class="activity-icon" aria-hidden="true">🏃</span><span class="activity-name">Juoksu</span>
+    <span class="helper">Rappusjuoksu, Cooperin testi ja tavallinen juoksu. Seuraa matkaa, aikaa ja kehitystä.</span>
+    <span class="badge">Avaa harjoitus →</span>
+  </button>
+</div>
+<p class="helper" style="margin-top:18px">Kaikki harjoitukset pysyvät omalla tililläsi ja synkronoituvat laitteiden välillä internetyhteyden kautta.</p>
+</main>
+<script type="module">
+import {firebaseConfig} from "./firebase-config.js";
+import {initializeApp} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+const auth=getAuth(initializeApp(firebaseConfig));
+const $=id=>document.getElementById(id);
+let active=false;
+const DOMAIN="users.leuanveto.example.com";
+function loginAddress(value){
+ const n=value.trim().toLowerCase();
+ if(n.includes("@")){if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(n))throw new Error("Sähköpostiosoite ei kelpaa.");return n}
+ if(!/^[a-z0-9][a-z0-9_-]{2,23}$/.test(n))throw new Error("Käyttäjänimessä voi olla 3–24 merkkiä: a–z, 0–9, _ ja -.");
+ return n+"@"+DOMAIN;
+}
+function showError(message){$("loginError").textContent=message}
+function displayName(u){return u.email?.endsWith("@"+DOMAIN)?u.email.split("@")[0]:(u.email||"Oma tili")}
+function busy(on){for(const id of ["submitLogin","register","reset"])$(id).disabled=on}
+onAuthStateChanged(auth,user=>{
+ active=!!user;
+ $("status").textContent=user?"Synkronointi käytössä kaikilla kirjautuneilla laitteilla":"Kirjaudu sisään käyttääksesi harjoituspäiväkirjoja";
+ $("statusTag").textContent=user?"Pilvi":"Kirjautuminen";
+ $("loggedIn").hidden=!user;
+ $("signIn").hidden=!!user;
+ $("openPullups").disabled=!user;$("openRunning").disabled=!user;
+ if(user){$("userLabel").textContent=displayName(user);showError("");$("password").value=""}
+},error=>{$("status").textContent="Kirjautumista ei voitu tarkistaa: "+error.message});
+$("signIn").addEventListener("submit",async e=>{
+ e.preventDefault();showError("");busy(true);
+ try{await signInWithEmailAndPassword(auth,loginAddress($("loginEmail").value),$("password").value)}
+ catch(e){showError("Kirjautuminen epäonnistui. Tarkista tunnus ja salasana. ("+(e.code||e.message)+")")}
+ finally{busy(false)}
+});
+$("register").addEventListener("click",async()=>{
+ if(!$("signIn").reportValidity())return;showError("");busy(true);
+ try{await createUserWithEmailAndPassword(auth,loginAddress($("loginEmail").value),$("password").value)}
+ catch(e){showError("Tunnuksen luominen epäonnistui. ("+(e.code||e.message)+")")}
+ finally{busy(false)}
+});
+$("reset").addEventListener("click",async()=>{
+ try{
+  const email=loginAddress($("loginEmail").value);
+  if(email.endsWith("@"+DOMAIN))return showError("Käyttäjänimitilillä ei ole sähköpostipalautusta. Käytä tallessa olevaa salasanaa.");
+  await sendPasswordResetEmail(auth,email);
+  showError("Jos osoitteella on tili, salasanan palautusviesti on lähetetty.");
+ }catch(e){showError(e.message||"Salasanan palautus epäonnistui.")}
+});
+$("logout").onclick=async()=>{try{await signOut(auth)}catch(e){$("status").textContent="Uloskirjautuminen epäonnistui: "+e.message}};
+$("openPullups").onclick=()=>{if(active)location.href="./leuanveto/"};
+$("openRunning").onclick=()=>{if(active)location.href="./juoksu/"};
+</script></body></html>
